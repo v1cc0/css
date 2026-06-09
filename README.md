@@ -86,7 +86,7 @@ Run the local daemon:
 
 ```bash
 css serve
-css serve --socket /tmp/codexdaemon.sock
+css serve --socket /tmp/css.sock
 ```
 
 ## Configuration

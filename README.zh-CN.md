@@ -78,7 +78,7 @@ css takeover :cwd
 
 ```bash
 css serve
-css serve --socket /tmp/codexdaemon.sock
+css serve --socket /tmp/css.sock
 ```
 
 ## 配置

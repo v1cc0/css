@@ -18,7 +18,8 @@ use serde_json::Value;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "codexdaemon",
+    name = "Codex CLI session switcher",
+    bin_name = "css",
     version,
     about = "Discover and resume current user's Codex CLI sessions"
 )]
@@ -694,7 +695,10 @@ fn serve(codex_home: &Path, codex_bin: &str, socket: Option<PathBuf>) -> Result<
     }
     let listener =
         UnixListener::bind(&socket).with_context(|| format!("bind {}", socket.display()))?;
-    println!("codexdaemon listening on {}", socket.display());
+    println!(
+        "Codex CLI session switcher listening on {}",
+        socket.display()
+    );
 
     for stream in listener.incoming() {
         let mut stream = stream?;
@@ -736,7 +740,7 @@ fn default_socket_path() -> PathBuf {
     std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
-        .join("codexdaemon.sock")
+        .join("css.sock")
 }
 
 fn shell_words(argv: &[String]) -> String {
@@ -804,5 +808,12 @@ mod tests {
             .into_os_string();
 
         assert_eq!(exec_program("target/debug/codex").unwrap(), expected);
+    }
+
+    #[test]
+    fn cli_version_uses_product_name_not_legacy_daemon_name() {
+        use clap::CommandFactory;
+
+        assert_eq!(Cli::command().get_name(), "Codex CLI session switcher");
     }
 }
