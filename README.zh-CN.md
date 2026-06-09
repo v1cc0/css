@@ -10,7 +10,7 @@
 - 推断每个进程保存的 Codex 线程/会话元数据。
 - 显示会话看起来是在工作中、等待用户输入，还是出现故障。
 - 通过会话 ID、标题、PID 或当前工作目录恢复会话。
-- 通过终止原始进程并在当前终端中恢复会话来接管正在运行的会话。
+- 通过终止原始进程并在当前终端中从原会话工作目录恢复会话来接管正在运行的会话。
 - 可选地通过本地 Unix socket 守护进程暴露 list/resolve/takeover 操作。
 
 ## 要求
@@ -64,6 +64,7 @@ css continue <session-id> -- "continue the previous task"
 
 ```bash
 css continue <session-id> --dry-run
+# 输出：cd <session-cwd> && codex resume <session-id> --cd <session-cwd>
 ```
 
 接管正在运行的会话：

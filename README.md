@@ -17,7 +17,7 @@ with running `codex` processes in `/proc`, and can build or execute the matching
   malfunctioning.
 - Resume a session by session id, title, PID, or current working directory.
 - Take over a running session by terminating the original process and resuming
-  it in the current terminal.
+  it in the current terminal from the original session's working directory.
 - Optionally expose list/resolve/takeover operations through a local Unix socket
   daemon.
 
@@ -72,6 +72,7 @@ Preview the resume command without executing it:
 
 ```bash
 css continue <session-id> --dry-run
+# prints: cd <session-cwd> && codex resume <session-id> --cd <session-cwd>
 ```
 
 Take over a running session:

@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsString,
     fs::{self, File},
     io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     os::unix::{net::UnixListener, process::CommandExt},
@@ -161,9 +162,9 @@ fn main() -> Result<()> {
             let thread = resolve_target(&codex_home, &target)?;
             let argv = resume_argv(&cli.codex_bin, &thread, prompt.as_deref());
             if dry_run {
-                println!("{}", shell_words(&argv));
+                println!("{}", resume_shell_command(&argv, &thread.cwd));
             } else {
-                exec_resume(argv)?;
+                exec_resume(argv, &thread.cwd)?;
             }
         }
         Cmd::Takeover {
@@ -176,10 +177,11 @@ fn main() -> Result<()> {
             let argv = resume_argv(&cli.codex_bin, &thread, prompt.as_deref());
             if dry_run {
                 println!("kill {}", pid);
-                println!("{}", shell_words(&argv));
+                println!("{}", resume_shell_command(&argv, &thread.cwd));
             } else {
+                validate_resume_cwd(&thread.cwd)?;
                 terminate_process(pid)?;
-                exec_resume(argv)?;
+                exec_resume(argv, &thread.cwd)?;
             }
         }
         Cmd::Serve { socket } => serve(&codex_home, &cli.codex_bin, socket)?,
@@ -621,13 +623,37 @@ fn resume_argv(codex_bin: &str, thread: &Thread, prompt: Option<&str>) -> Vec<St
     argv
 }
 
-fn exec_resume(argv: Vec<String>) -> Result<()> {
+fn exec_resume(argv: Vec<String>, cwd: &str) -> Result<()> {
+    validate_resume_cwd(cwd)?;
     let program = argv
         .first()
         .ok_or_else(|| anyhow!("empty argv"))?
         .to_string();
-    let err = Command::new(program).args(&argv[1..]).exec();
-    Err(anyhow!(err).context("exec codex resume"))
+    let program = exec_program(&program)?;
+    let err = Command::new(program)
+        .args(&argv[1..])
+        .current_dir(cwd)
+        .env("PWD", cwd)
+        .exec();
+    Err(anyhow!(err).context(format!("exec codex resume from cwd {cwd}")))
+}
+
+fn validate_resume_cwd(cwd: &str) -> Result<()> {
+    let metadata = fs::metadata(cwd).with_context(|| format!("stat resume cwd {cwd}"))?;
+    if metadata.is_dir() {
+        Ok(())
+    } else {
+        Err(anyhow!("resume cwd {cwd} is not a directory"))
+    }
+}
+
+fn exec_program(program: &str) -> Result<OsString> {
+    let path = Path::new(program);
+    if path.is_relative() && program.contains('/') {
+        Ok(std::env::current_dir()?.join(path).into_os_string())
+    } else {
+        Ok(OsString::from(program))
+    }
 }
 
 fn terminate_process(pid: u32) -> Result<()> {
@@ -720,6 +746,10 @@ fn shell_words(argv: &[String]) -> String {
         .join(" ")
 }
 
+fn resume_shell_command(argv: &[String], cwd: &str) -> String {
+    format!("cd {} && {}", shell_quote(cwd), shell_words(argv))
+}
+
 fn shell_quote(s: &str) -> String {
     if s.chars()
         .all(|c| c.is_ascii_alphanumeric() || "@%_+=:,./-".contains(c))
@@ -727,5 +757,52 @@ fn shell_quote(s: &str) -> String {
         s.to_string()
     } else {
         format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn thread_with_cwd(cwd: &str) -> Thread {
+        Thread {
+            id: "00000000-0000-0000-0000-000000000000".to_string(),
+            rollout_path: "/tmp/rollout.jsonl".to_string(),
+            cwd: cwd.to_string(),
+            title: "test".to_string(),
+            updated_at: 0,
+            updated_at_ms: None,
+            model: None,
+            model_provider: "openai".to_string(),
+            sandbox_policy: "workspace-write".to_string(),
+            approval_mode: "on-request".to_string(),
+            cli_version: "0.0.0".to_string(),
+        }
+    }
+
+    #[test]
+    fn dry_run_resume_command_changes_directory_first() {
+        let thread = thread_with_cwd("/home/vc/project with space");
+        let argv = resume_argv("codex", &thread, Some("continue"));
+
+        assert_eq!(
+            resume_shell_command(&argv, &thread.cwd),
+            "cd '/home/vc/project with space' && codex resume 00000000-0000-0000-0000-000000000000 --cd '/home/vc/project with space' continue"
+        );
+    }
+
+    #[test]
+    fn bare_program_still_uses_path_lookup_after_chdir() {
+        assert_eq!(exec_program("codex").unwrap(), OsString::from("codex"));
+    }
+
+    #[test]
+    fn relative_program_path_is_resolved_before_chdir() {
+        let expected = std::env::current_dir()
+            .unwrap()
+            .join("target/debug/codex")
+            .into_os_string();
+
+        assert_eq!(exec_program("target/debug/codex").unwrap(), expected);
     }
 }
